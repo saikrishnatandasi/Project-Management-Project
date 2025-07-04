@@ -1,0 +1,303 @@
+_Color_Project Status = 
+SWITCH(
+    TRUE(),
+    SELECTEDVALUE('Dim_Status'[Key]) = "1", "#FB91A7",
+    SELECTEDVALUE('Dim_Status'[Key]) = "2", "#3EBBEE",
+    SELECTEDVALUE('Dim_Status'[Key]) = "3", "#784AF4",
+    SELECTEDVALUE('Dim_Status'[Key]) = "4", "#0076F9",
+    "#784AF4"  // Default value
+)
+
+--------------------------------------------------------------------------------------
+
+MostOverdueProject_Name = 
+VAR OverdueProjects = 
+    FILTER(
+        'Fact_Project',
+        'Fact_Project'[Project Status (Calculated)] = "4"
+    )
+VAR OverdueDuration = 
+    MAXX(
+        ADDCOLUMNS(
+            OverdueProjects,
+            "OverdueDays",
+            DATEDIFF('Fact_Project'[ProjectPlannedCompletion], TODAY(), DAY)
+        ),
+        [OverdueDays]
+    )
+VAR MostOverdueProject = 
+    FIRSTNONBLANK(
+        SELECTCOLUMNS(
+            FILTER(
+                ADDCOLUMNS(
+                    OverdueProjects,
+                    "OverdueDays",
+                    DATEDIFF('Fact_Project'[ProjectPlannedCompletion], TODAY(), DAY)
+                ),
+                [OverdueDays] = OverdueDuration
+            ),
+            "ProjectName", 'Fact_Project'[Project ID]
+        ),
+        ""
+    )
+
+RETURN
+LOOKUPVALUE(
+        'Dim_ProjectName'[Project ID - Name],  -- The name column in Dim_Assignee
+        'Dim_ProjectName'[Project ID], MostOverdueProject  -- Match Assigned To field with the value from Fact_Project
+    )
+
+--------------------------------------------------------------------------------------
+
+MostOverdueProject_Value = 
+VAR OverdueProjects = 
+    FILTER(
+        'Fact_Project',
+        'Fact_Project'[Project Status (Calculated)] = "4"
+    )
+VAR OverdueDuration = 
+    MAXX(
+        ADDCOLUMNS(
+            OverdueProjects,
+            "OverdueDays",
+            DATEDIFF('Fact_Project'[ProjectPlannedCompletion], TODAY(), DAY)
+        ),
+        [OverdueDays]
+    )
+RETURN 
+    OverdueDuration
+
+--------------------------------------------------------------------------------------
+
+NumberOfTasksOverBudget_Value = 
+CALCULATE(
+    COUNT('Fact_Project'[Task ID]),
+    FILTER(
+        'Fact_Project',
+        'Fact_Project'[Budget Overrun] = "Over Budget"
+    )
+)
+
+--------------------------------------------------------------------------------------
+
+PMwithMostPendingTasks_Name = 
+VAR PendingTasks = 
+    FILTER(
+        'Fact_Project',
+        'Fact_Project'[Task Status] = "4"  -- "4" represents Pending tasks
+    )
+VAR PMTaskCount = 
+    SUMMARIZE(
+        PendingTasks,
+        'Fact_Project'[Assigned To],
+        "PendingTaskCount", COUNT('Fact_Project'[Task ID])
+    )
+VAR MaxTasks = 
+    MAXX(PMTaskCount, [PendingTaskCount])
+VAR PMWithMaxTasks = 
+    FIRSTNONBLANK(
+        SELECTCOLUMNS(
+            FILTER(
+                PMTaskCount,
+                [PendingTaskCount] = MaxTasks
+            ),
+            "AssignedTo", 'Fact_Project'[Assigned To]
+        ),
+        ""
+    )
+
+RETURN 
+    LOOKUPVALUE(
+        'Dim_Assignee'[Assigned To],  -- The name column in Dim_Assignee
+        'Dim_Assignee'[Key], PMWithMaxTasks  -- Match Assigned To field with the value from Fact_Project
+    )
+
+--------------------------------------------------------------------------------------
+
+PMwithMostPendingTasks_Value = 
+VAR PendingTasks = 
+    FILTER(
+        'Fact_Project',
+        'Fact_Project'[Task Status] = "4"  -- "4" represents Pending tasks
+    )
+VAR PMTaskCount = 
+    SUMMARIZE(
+        PendingTasks,
+        'Fact_Project'[Assigned To],
+        "PendingTaskCount", COUNT('Fact_Project'[Task ID])
+    )
+VAR MaxTasks = 
+    MAXX(PMTaskCount, [PendingTaskCount])
+RETURN 
+    MaxTasks
+
+--------------------------------------------------------------------------------------
+
+ProjectWithHighestBudgetUtilization_Name = 
+VAR BudgetUtilization = 
+    ADDCOLUMNS(
+        'Dim_ProjectName',
+        "Utilization",
+        DIVIDE(
+            SUMX(
+                FILTER(
+                    'Fact_Project',
+                    'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+                ),
+                'Fact_Project'[Actual Cost]
+            ),
+            SUMX(
+                FILTER(
+                    'Fact_Project',
+                    'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+                ),
+                'Fact_Project'[Budget]
+            ),
+            0
+        ) * 100
+    )
+VAR MaxUtilization = 
+    MAXX(BudgetUtilization, [Utilization])
+
+VAR MostUtilizedProject = 
+    FIRSTNONBLANK(
+        SELECTCOLUMNS(
+            FILTER(
+                BudgetUtilization,
+                [Utilization] = MaxUtilization
+            ),
+            "ProjectName", 'Dim_ProjectName'[Project ID - Name]
+        ),
+        ""
+    )
+RETURN 
+    MostUtilizedProject
+
+--------------------------------------------------------------------------------------
+
+ProjectWithHighestBudgetUtilization_Value = 
+VAR BudgetUtilization = 
+    ADDCOLUMNS(
+        'Dim_ProjectName',
+        "Utilization",
+        DIVIDE(
+            SUMX(
+                FILTER(
+                    'Fact_Project',
+                    'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+                ),
+                'Fact_Project'[Actual Cost]
+            ),
+            SUMX(
+                FILTER(
+                    'Fact_Project',
+                    'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+                ),
+                'Fact_Project'[Budget]
+            ),
+            0
+        ) * 100
+    )
+VAR MaxUtilization = 
+    MAXX(BudgetUtilization, [Utilization])
+
+RETURN 
+    ROUND(MaxUtilization, 2) & "%"
+
+--------------------------------------------------------------------------------------
+
+ProjectWithHighestCost_Name = 
+
+VAR Cost = 
+    ADDCOLUMNS(
+        'Dim_ProjectName',
+        "Cost",
+        SUMX(
+            FILTER(
+                'Fact_Project',
+                'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+            ),
+            'Fact_Project'[Actual Cost]
+        )
+    )
+
+VAR MaxCost = 
+    MAXX(Cost, [Cost])
+
+VAR HighestCostProject = 
+    FIRSTNONBLANK(
+        SELECTCOLUMNS(
+            FILTER(
+                Cost,
+                [Cost] = MaxCost
+            ),
+            "ProjectName", 'Dim_ProjectName'[Project ID - Name]
+        ),
+        ""
+    )
+RETURN 
+    HighestCostProject
+
+--------------------------------------------------------------------------------------
+
+ProjectWithHighestCost_Value = 
+VAR Cost = 
+    ADDCOLUMNS(
+        'Dim_ProjectName',
+        "Cost",
+        SUMX(
+            FILTER(
+                'Fact_Project',
+                'Fact_Project'[Project ID] = 'Dim_ProjectName'[Project ID]
+            ),
+            'Fact_Project'[Actual Cost]
+        )
+    )
+
+VAR MaxCost = 
+    MAXX(Cost, [Cost])
+
+RETURN 
+    ROUND(MaxCost, 2)
+
+--------------------------------------------------------------------------------------
+
+Task Completion Percentage SVG = 
+VAR Actual = [Task Completion Percentage]
+VAR Target = 1
+VAR PERCENTAGEFILL = Actual/Target*100
+RETURN
+IF(HASONEVALUE(Dim_Assignee[Assigned To]),
+"data:image/svg+xml;utf8," & 
+"<svg width='125' height='21' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' display= 'block'  overflow='visible'>
+  <defs>
+    <linearGradient id='linear' x1='0%' y1='0%' x2='"&100+(100-PERCENTAGEFILL)&"%' y2='0%'>
+      <stop offset='0%'   stop-color='#3EBBEE'/>
+      <stop offset='100%' stop-color='#784AF4'/>
+    </linearGradient>
+  </defs>
+<rect id='track' x='0' y='3' rx='0' ry='0' width='100' height='20' fill='#D0D0D0' />
+<rect id='fill' x='0' y='3' rx='0' ry='0' width="& "'"& PERCENTAGEFILL &"'"&" height='20' fill='url(#linear)'></rect>
+</svg>"
+, BLANK())
+
+--------------------------------------------------------------------------------------
+
+Total Budget Utilization SVG = 
+VAR Actual = [Total Budget Utilization]
+VAR Target = 1
+VAR PERCENTAGEFILL = Actual/Target*100
+RETURN
+IF(HASONEVALUE(Dim_Assignee[Assigned To]),
+"data:image/svg+xml;utf8," & 
+"<svg width='125' height='21' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' display= 'block'  overflow='visible'>
+  <defs>
+    <linearGradient id='linear' x1='0%' y1='0%' x2='"&100+(100-PERCENTAGEFILL)&"%' y2='0%'>
+      <stop offset='0%'   stop-color='#3EBBEE'/>
+      <stop offset='100%' stop-color='#784AF4'/>
+    </linearGradient>
+  </defs>
+<rect id='track' x='0' y='3' rx='0' ry='0' width='100' height='20' fill='#D0D0D0' />
+<rect id='fill' x='0' y='3' rx='0' ry='0' width="& "'"& PERCENTAGEFILL &"'"&" height='20' fill='url(#linear)'></rect>
+</svg>"
+, BLANK())
